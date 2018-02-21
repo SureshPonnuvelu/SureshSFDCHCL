@@ -1,0 +1,315 @@
+/*
+** V1
+** JIRA #: 1148
+** Sprint: Anthem Prime - Optimus - Sprint 5.5
+** UI Page: https://6lgk0b.axshare.com/#g=1&p=mini_census_full
+** Author: Muthu Rajagopalan
+** Date: 1/2/2018
+**
+** Census Members Controller Class
+** ApexClass: ap_CensusMembersController
+**
+** Design
+** ======
+** Operations:
+**  1. Get Census Members; 
+**  2. Save Employee / Dependent; 
+**
+** Inputs:
+** Census Header Record Id 
+*/
+global with sharing class ap_CensusMembersController implements vlocity_ins.VlocityOpenInterface2{
+
+    private string strAccountId;
+    private string strCensusHeaderId;
+    private boolean bolDebugMsgFlag = true;
+
+    private List<vlocity_ins__GroupCensusMember__c > lstOutCensusMembers;
+    private vlocity_ins__GroupCensus__c censusHeaderRecord;
+    
+    private static string GETCMRECORDS = 'getCMRecords';
+    private static string SETCMRECORDS = 'setCMRecords';
+    private static string UPSERTCMRECORD = 'upsertCMRecord';
+    private static string DELETECMRECORD = 'deleteCMRecord';
+    
+
+    global Boolean invokeMethod(String methodName, Map<String, Object> inputMap, Map<String, Object> outMap, Map<String, Object> optns) {
+        if(GETCMRECORDS.equalsIgnoreCase(methodName))
+        {
+            getCMRecords(inputMap, optns);
+            outMap.put('CensusMembersList', lstOutCensusMembers);
+            outMap.put('CensusHeaderRecord', censusHeaderRecord);
+            outMap.put('AccountId', strAccountId);
+        } else if(SETCMRECORDS.equalsIgnoreCase(methodName)){
+            // save  census member records for the given account id's first census. If census is not found, create one and save the records
+//            setCMRecords(inputMap, optns);
+            upsertCMRecord(inputMap, optns);
+            outMap.put('CensusMembersList', lstOutCensusMembers);
+            outMap.put('CensusHeaderRecord', censusHeaderRecord);
+            outMap.put('AccountId', strAccountId);
+        } else if(UPSERTCMRECORD.equalsIgnoreCase(methodName)){
+            // upsertcensus member record
+            upsertCMRecord(inputMap, optns);
+            outMap.put('CensusMembersList', lstOutCensusMembers);
+            outMap.put('CensusHeaderRecord', censusHeaderRecord);
+            outMap.put('AccountId', strAccountId);
+        } else if(DELETECMRECORD.equalsIgnoreCase(methodName)){
+            // save  census member records for the given account id's first census. If census is not found, create one and save the records
+            deleteCMRecord(inputMap, optns);
+            outMap.put('CensusMembersList', lstOutCensusMembers);
+            outMap.put('CensusHeaderRecord', censusHeaderRecord);
+            outMap.put('AccountId', strAccountId);
+        }
+            
+                                    
+        return true;
+    }
+
+    public ap_CensusMembersController() {
+        // Empty Constructor
+    }
+
+    private void  getCMRecords(Map<String, Object> inputMap, Map<String, Object>  optns) {
+        strAccountId = String.valueOf(inputMap.get('AccountId'));
+        getCensusHeaderRecord(inputMap, optns);
+        getCensusMemberRecords(inputMap, optns);
+    }
+    
+    private void getCensusHeaderRecord(Map<String, Object> inputMap, Map<String, Object>  optns){
+        try {
+            if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.getCensusHeaderRecord: Entering');
+
+            List<Account> AccountRecordList;
+            List<vlocity_ins__GroupCensus__c> censusHeaderRecordList;
+            
+
+            AccountRecordList = [select id, name from Account where id = :strAccountId];
+            if (AccountRecordList.isEmpty()) {
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'getCensusHeaderRecord: Could not get Account for the Account Id = "' + strAccountId + '"'));
+                if (bolDebugMsgFlag) system.debug('Exception: getCensusHeaderRecord: Could not get Account for the Account Id = "' + strAccountId + '"');
+                strCensusHeaderId = '';
+            } else {
+                censusHeaderRecordList = [select id, name, vlocity_ins__GroupId__c from vlocity_ins__GroupCensus__c where vlocity_ins__GroupId__c = :AccountRecordList[0].id Limit 1];
+                if (censusHeaderRecordList.isEmpty()) {
+                    // Create a new Census Record and get the Census Id
+                    censusHeaderRecord = new vlocity_ins__GroupCensus__c();
+                    censusHeaderRecord.Name = 'New Census Record - ' + String.valueOf(Date.today());
+                    censusHeaderRecord.vlocity_ins__GroupId__c = strAccountId;
+                    // censusRecord.vlocity_ins__CensusStatus__c = 'Draft';
+                    try {
+                        insert censusHeaderRecord;
+                        strCensusHeaderId = censusHeaderRecord.id;
+                    } catch (Exception es) {
+                        ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'setCensusHeaderId: Unable to create Census Header Record: ' + es.getMessage()));
+                        strCensusHeaderId = '';
+                        return;
+                    }
+                } else {
+                    censusHeaderRecord = censusHeaderRecordList.get(0);
+                    strCensusHeaderId = censusHeaderRecord.id;
+                }
+            }
+            if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.setCensusHeaderId: Exiting');
+        } catch (Exception e) {
+            ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'setCensusHeaderId: ' + e.getMessage()));
+            if (bolDebugMsgFlag) system.debug('setCensusHeaderId Exception: setCensusHeaderId: ' + e.getMessage());
+            strCensusHeaderId = '';
+        }
+    }
+
+    
+    // getCMRecords method which calls 'cmLoadRecords' method to load the data
+    private void getCensusMemberRecords (Map<String, Object> inputMap, Map<String, Object> optns) {
+        try {
+            if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.ap_CensusMembersController: Entering');
+
+            if (strAccountId == null || strAccountId == '' || strCensusHeaderId == null || strCensusHeaderId == '') {
+                // Account Id / Census Header id is null. Do not proceed
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'ap_CensusMembersController: Account Id should be passed as URL parameter "accid"'));
+            } else {
+                cmLoadRecords();
+            }
+            if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.ap_CensusMembersController: Exiting');   
+        } catch (Exception e) {
+            ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'ap_CensusMembersController: ' + e.getMessage()));
+        }
+    }
+    
+
+    private void cmLoadRecords() {
+    // Loads Census Members records into 'cmRecord' list
+        try {
+            if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.cmLoadRecords: Entering');   
+            // Check for missing Census Header Id
+            if (strCensusHeaderId == null)
+            {
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'cmLoadRecords: NULL Census Header Id - Unable to get Census Header Id'));
+            } else if (strCensusHeaderId == '') {
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'cmLoadRecords: BLANK Census Header Id - Unable to get Census Header Id'));
+            } else {
+
+                list <vlocity_ins__GroupCensus__c> censusRecordList;
+                censusRecordList = Database.query('select id, name, vlocity_ins__GroupId__c ' +
+                                                                    ' from vlocity_ins__GroupCensus__c ' + 
+                                                                    ' where id = \'' + strCensusHeaderId + 
+                                                                    '\' Limit 1');
+                if (censusRecordList.isEmpty()) {
+                    ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'cmLoadRecords: Could not get Census Header for the Census Header Id (cenid) = "' + strCensusHeaderId + '"'));
+                    return;
+                }
+
+                string strSelQuery = 'SELECT Id, EmployeeName__c, vlocity_ins__Birthdate__c, MemberAge__c, COBRA__c, MedicalCoverageType__c, ' + 
+                    'DentalCoverageType__c, VisionCoverageType__c, LifeDisability__c, vlocity_ins__IsPrimaryMember__c, ' + 
+                    'vlocity_ins__RelatedCensusMemberId__c, vlocity_ins__CensusId__c, vlocity_ins__Gender__c, EmployeeSpouseDependentIndicator__c ' + 
+                    'FROM vlocity_ins__GroupCensusMember__c ';
+                string strWhereQuery = 'where vlocity_ins__CensusId__c = \'' + strCensusHeaderId + '\' ';
+                
+                // Query to load all Employee Records (i.e. Primary Member Flag is true)
+                string strEmpQuery =  strSelQuery +  strWhereQuery + ' AND vlocity_ins__IsPrimaryMember__c = true ORDER BY id ASC LIMIT 500';
+                
+                // Query to load Dependent records  (i.e. Primary Member Flag is false)
+                string strDepQuery = strSelQuery +  strWhereQuery + '  AND vlocity_ins__IsPrimaryMember__c = false ORDER BY vlocity_ins__RelatedCensusMemberId__c ASC LIMIT 500'; 
+                
+                lstOutCensusMembers = new List<vlocity_ins__GroupCensusMember__c >();
+                
+                List<vlocity_ins__GroupCensusMember__c> cmEmpList; // List for Employee Records
+                List<vlocity_ins__GroupCensusMember__c> cmDepList; // List of Dependent Records
+                vlocity_ins__GroupCensusMember__c cmEmpRec;
+                vlocity_ins__GroupCensusMember__c cmDepRec;
+                
+                integer intEmp = 0;
+                integer intDep = 0;
+                
+                integer intEmpCount;
+                integer intDepCount;
+
+                boolean bolDepRecAvl = true;
+                
+                // Execute the queries
+                cmEmpList = Database.query(strEmpQuery);
+                cmDepList = Database.query(strDepQuery);
+                
+                // Get the sizes of the Employee and Dependent Lists
+                intEmpCount = cmEmpList.size();
+                intDepCount = cmDepList.size();
+                
+                if (bolDebugMsgFlag) system.debug('intEmpCount: ' + intEmpCount);
+                if (bolDebugMsgFlag) system.debug('intDepCount: ' + intDepCount);
+                
+                /*
+                 * Logic to match Employee and Dependent records
+                 * =============================================
+                 * 1. Employee list is sorted by record id.
+                 * 2. Dependent list is sorted by Employee record id. 
+                 * 3. Employee record is added to the Census Members List.
+                 * 4. If Dependent record is NOT part of the Employee record, Fetch Next Employee record and goto step 3
+                 * 5. If Dependent record is part of the Employee record, it is added to the Census Members List.
+                 * 6. Fetch Next Dependent record and goto step 4
+                */
+                while (intEmp < intEmpCount) {
+                    cmEmpRec = cmEmpList.get(intEmp);
+                    lstOutCensusMembers.add(cmEmpRec);
+                    while (intDep < intDepCount && bolDepRecAvl == true) {
+                        cmDepRec = cmDepList.get(intDep);
+                        if (cmEmpRec.id == cmDepRec.vlocity_ins__RelatedCensusMemberId__c) {
+                            lstOutCensusMembers.add(cmDepRec);
+                            intDep++;
+                        } else {
+                            bolDepRecAvl = false;
+                        }
+                    }
+                    intEmp++;
+                    bolDepRecAvl = true;
+                }
+            }
+            
+            if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.cmLoadRecords: Exiting');
+            return;
+        } catch (Exception e) {
+            ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, 'cmLoadRecords: ' + e.getMessage()));
+        }
+    }
+    
+  
+    
+    
+
+    
+ private  void upsertCMRecord (Map<String, Object> inputMap, Map<String, Object> optns) {
+    try {
+        if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.upsertCMRecord: Entering');
+        strAccountId = (String)(inputMap.get('AccountId'));
+        strCensusHeaderId = (String)(inputMap.get('CensusHeaderId'));
+        String strJSON = String.valueOf(inputMap.get('CensusMembersList'));
+
+        String strTemp0;
+        String strTemp1;
+        String strTemp2;
+        List<String> lstStringJSON;
+        Map<String, String> mapCSRec = new Map<String, String>();
+        vlocity_ins__GroupCensusMember__c cmTmpCMRec;
+
+        strJSON = strJSON.substring(2, strJSON.length()-2);
+
+        if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.upsertCMRecord:strJSON: ' + strJSON);
+
+        lstStringJSON = strJSON.split(', ');
+        for (integer i=0; i<lstStringJSON.size(); i++) {
+           strTemp0 = lstStringJSON[i];
+           strTemp1 = strTemp0.substring(0, strTemp0.indexof('='));
+           strTemp2 = strTemp0.substring(strTemp0.indexof('=') + 1);
+           mapCSRec.put(strTemp1, strTemp2);
+        }
+        
+        cmTmpCMRec = new vlocity_ins__GroupCensusMember__c();
+
+        String strTempId = mapCSRec.get('Id');
+        if (strTempId != null && strTempId.substring(0,3) != 'New') cmTmpCMRec.Id = strTempId;
+        if (strTempId == null || strTempId.substring(0,3) == 'New') cmTmpCMRec.vlocity_ins__CensusId__c = strCensusHeaderId;
+
+        if (mapCSRec.get('EmployeeName__c') != null) cmTmpCMRec.EmployeeName__c = mapCSRec.get('EmployeeName__c');
+        if (mapCSRec.get('MemberAge__c') != null) cmTmpCMRec.MemberAge__c = Integer.valueof( mapCSRec.get('MemberAge__c'));
+        if (mapCSRec.get('COBRA__c') != null) cmTmpCMRec.COBRA__c = mapCSRec.get('COBRA__c');
+        if (mapCSRec.get('MedicalCoverageType__c') != null) cmTmpCMRec.MedicalCoverageType__c = mapCSRec.get('MedicalCoverageType__c');
+        if (mapCSRec.get('DentalCoverageType__c') != null) cmTmpCMRec.DentalCoverageType__c = mapCSRec.get('DentalCoverageType__c');
+        if (mapCSRec.get('VisionCoverageType__c') != null) cmTmpCMRec.VisionCoverageType__c = mapCSRec.get('VisionCoverageType__c');
+        if (mapCSRec.get('LifeDisability__c') != null) cmTmpCMRec.LifeDisability__c = mapCSRec.get('LifeDisability__c');
+        if (mapCSRec.get('vlocity_ins__Birthdate__c') != null) cmTmpCMRec.vlocity_ins__Birthdate__c = Date.parse(mapCSRec.get('vlocity_ins__Birthdate__c'));
+        if (mapCSRec.get('EmployeeSpouseDependentIndicator__c') != null) cmTmpCMRec.EmployeeSpouseDependentIndicator__c = mapCSRec.get('EmployeeSpouseDependentIndicator__c');
+        if (mapCSRec.get('vlocity_ins__Gender__c') != null) cmTmpCMRec.vlocity_ins__Gender__c = mapCSRec.get('vlocity_ins__Gender__c');
+        
+        if (mapCSRec.get('vlocity_ins__IsPrimaryMember__c') == 'true') {
+           cmTmpCMRec.vlocity_ins__IsPrimaryMember__c = true;
+           cmTmpCMRec.vlocity_ins__RelatedCensusMemberId__c = null;
+        } else if (mapCSRec.get('vlocity_ins__IsPrimaryMember__c') == 'false') {
+           cmTmpCMRec.vlocity_ins__IsPrimaryMember__c = false;
+           cmTmpCMRec.vlocity_ins__RelatedCensusMemberId__c = mapCSRec.get('vlocity_ins__RelatedCensusMemberId__c');
+        }
+       
+        
+        upsert cmTmpCMRec;
+            
+        if (bolDebugMsgFlag) system.debug('ap_CensusMembersController.upsertCMRecord: Exiting');
+
+  } catch( Exception e) {
+     system.debug('ap_CensusMembersController.upsertCMRecord: Exception' + String.valueOf(e));
+  }
+  }
+    private  void deleteCMRecord (Map<String, Object> inputMap, Map<String, Object> optns) {
+        try {
+            String strCMDelRecId = String.valueOf(inputMap.get('CensusMemberId'));
+            List <vlocity_ins__GroupCensusMember__c> lstCMDelRec;
+            
+            // delete dependent records (if any)
+            lstCMDelRec = Database.query('Select Id from vlocity_ins__GroupCensusMember__c where vlocity_ins__RelatedCensusMemberId__c= \'' + strCMDelRecId + '\'');
+            delete lstCMDelRec;
+
+            // delete selected record
+            lstCMDelRec = Database.query('Select Id from vlocity_ins__GroupCensusMember__c where Id= \''  + strCMDelRecId + '\'');
+            delete lstCMDelRec;
+            
+        } catch (Exception e) {
+            if (bolDebugMsgFlag) system.debug('setCensusHeaderId Exception: deleteCMRecord: ' + e.getMessage());
+        }
+    }
+}
